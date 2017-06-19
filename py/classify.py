@@ -13,6 +13,8 @@ import argparse
 import logging
 import numpy as np
 import mmh3
+import sys
+import math
 
 class Dataset:
     
@@ -97,7 +99,13 @@ class Model:
         self.load_labels(labels_path)
         self.num_labels = len(self.label2idx)
         self.params = None
-        
+
+        #RMS_prop parameters.
+        self.learning_rates = None
+        self.adagrad_G = None
+        self.eta_0 = None
+        self.gamma = None    
+
     def lookup_idx(self, label):
         return self.label2idx[label]
 
@@ -126,12 +134,15 @@ def learn(train, dev, model, num_epochs=1, dev_iters=None):
     logging.debug('Training...')
     
     model.params = np.zeros(shape=(model.num_labels, model.num_features), dtype=np.float)
+    model.learning_rates = np.zeros(shape=(model.num_features), dtype=np.float)
+    model.adagrad_G = np.zeros(shape=(model.num_features), dtype=np.float)
+
     t = 0
     next_print = 1
     for epoch in range(num_epochs):        
         # Run SGD for one pass through the train data.
-        for x, y in train.iterdata():
-            sgd_step(model.params, x, y, t)
+        for x, y in train.iterdata(): 
+            sgd_step(model.params, x, y, t, model.learning_rates, model.adagrad_G, model.eta_0, model.gamma)
             t += 1
             if t == next_print:
                 next_print *= 2
@@ -150,18 +161,39 @@ def learn(train, dev, model, num_epochs=1, dev_iters=None):
             logging.info('Epoch: %d Iteration: %d Features: %d Accuracy on dev: %.2f' % 
                          (epoch, t, len(x), accuracy))
 
-def sgd_step(params, x, y, t):
+def adagrad_learning_rate_update(learning_rates, adagrad_G, param_gradient, feat, eta_0, gamma): 
+    #First compute G value. 
+    #adagrad_G[feat] = (gamma * adagrad_G[feat]) + ((1.0 - gamma) * param_gradient ** 2)
+    adagrad_G[feat] += param_gradient ** 2
+
+    epsilon = 1e-8
+
+    #Update learning rate. 
+    learning_rates[feat] = eta_0 / math.sqrt(adagrad_G[feat] + epsilon) 
+
+def sgd_step(params, x, y, t, learning_rates, adagrad_G, eta_0, gamma):
     #grad_row, grad_col, grad_val = sparse_get_gradient(params, x, y)
     #sparse_update_params(params, grad_row, grad_col, grad_val)
     
-    learning_rate = 0.1
     num_labels = params.shape[0]
     p = get_probabilities(params, x)
+
     for yprime in range(num_labels):
         for feat in x:
             if yprime == y: v = 1
             else:           v = 0
-            params[yprime, feat] += learning_rate * (v - p[yprime])
+
+            #Compute gradient for parameter. 
+            param_gradient = v - p[yprime]
+
+            #Add regularization term. 
+            
+
+            #Update G values for each parameter. 
+            adagrad_learning_rate_update(learning_rates, adagrad_G, param_gradient, feat, eta_0, gamma)
+
+            #Update using per-feature learning rate. 
+            params[yprime, feat] += learning_rates[feat] * param_gradient
 
 def get_probabilities(params, x):
     p = sparse_mult(params, x)
@@ -228,6 +260,10 @@ def main(args):
     logging.basicConfig(level=logging.DEBUG, format='%(relativeCreated)6d %(levelname)s - %(message)s')
 
     model = Model(args.num_features, args.labels)
+
+    #Set eta_0 for Adagrad. 
+    model.eta_0 = 1.0
+    model.gamma = 0.1
 
     # Cache the training data if we will be doing multiple epochs
     cache_train = (args.num_epochs > 1)
