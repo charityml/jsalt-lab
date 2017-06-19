@@ -13,6 +13,7 @@ all:
 	
 setup:
 	pip install --user mmh3
+	pip install --user future
 
 	mkdir -p $(DATA)
 	mkdir -p $(OUT)

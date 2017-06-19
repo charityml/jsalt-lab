@@ -10,6 +10,7 @@ from builtins import range
 from builtins import *
 
 import argparse
+import re
 
 def main(args):
     with open(args.input, 'r', encoding='utf-8') as f_in:
@@ -21,6 +22,8 @@ def main(args):
                 # Write features
                 f_out.write(lang)
                 f_out.write('\t')
+
+                
                 if lang == 'cmn' or lang == 'jpn':
                     # Treat each character as a feature, since there are no words.
                     for ch in sent:
@@ -30,6 +33,7 @@ def main(args):
                     # Treat each word as a feature.
                     words = sent.split(' ')
                     for word in words:
+                        word = re.sub(r'[~`!@#$%^&*()\_\-\+\=\{\[\}\]:;\"\'|\\\/>.<,]', '', word);
                         f_out.write(word)
                         f_out.write(' ')
                 f_out.write('\n')
